@@ -902,4 +902,9 @@ git push
 
 ## License
 
-Add your preferred license here.
+This project is released under the MIT License.
+
+You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of this software, provided the copyright notice and license text are included.
+
+See [`LICENSE`](LICENSE) for the full license text.
+
