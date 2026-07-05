@@ -27,7 +27,7 @@ The server is designed to run on Linux-like systems, including Raspberry Pi, Ubu
 Recommended:
 
 - Node.js 20 LTS or newer
-- systemd for running as a background service
+- pm2 for running as a background service
 
 ---
 
@@ -63,15 +63,6 @@ You should see Node 20.x or newer.
 ---
 
 ## Clone the Repository
-
-```bash
-cd /opt
-sudo git clone https://github.com/bloodtick/echo-whispers-server.git
-sudo chown -R $USER:$USER /opt/echo-whispers-server
-cd /opt/echo-whispers-server
-```
-
-If you prefer running it from your home folder:
 
 ```bash
 cd ~
@@ -157,7 +148,7 @@ sudo npm install -g pm2
 Start Echo Whispers:
 
 ```bash
-cd /opt/echo-whispers-server
+cd ~/echo-whispers-server
 pm2 start server.js --name echo-whispers
 ```
 
@@ -264,7 +255,7 @@ pm2 describe echo-whispers
 ## Updating
 
 ```bash
-cd /opt/echo-whispers-server
+cd ~/echo-whispers-server
 git pull
 npm install
 pm2 restart echo-whispers
@@ -273,7 +264,7 @@ pm2 restart echo-whispers
 If you run manually:
 
 ```bash
-cd /opt/echo-whispers-server
+cd ~/echo-whispers-server
 git pull
 npm install
 node server.js
