@@ -16,36 +16,6 @@ The server is designed to run on Linux-like systems, including Raspberry Pi, Ubu
 
 ---
 
-## Important Security Notes
-
-Do not commit your real `config.json` file to GitHub.
-
-`config.json` can contain Amazon cookies, refresh tokens, CSRF tokens, API keys, and Hubitat callback URLs.
-
-A good `.gitignore` should include:
-
-```gitignore
-node_modules
-config.json
-.env
-*.log
-.DS_Store
-```
-
-If you enable an API key, API requests must include it by either:
-
-```text
-?apiKey=YOUR_API_KEY
-```
-
-or:
-
-```text
-x-api-key: YOUR_API_KEY
-```
-
----
-
 ## Requirements
 
 - Linux, Raspberry Pi OS, Ubuntu, Debian, or similar
@@ -131,12 +101,6 @@ Or directly:
 node server.js
 ```
 
-Default ports:
-
-```text
-Web UI / API: 8585
-Amazon Login Proxy: 8586
-```
 
 Open the UI:
 
@@ -176,103 +140,123 @@ config.json
 
 By default, it is created in the same directory as `server.js`.
 
-You can override that path:
 
-```bash
-CONFIG_FILE=/opt/echo-whispers-server/config/config.json node server.js
-```
-
-Common environment variables:
-
-```bash
-PORT=8585
-PROXY_PORT=8586
-CONFIG_FILE=/opt/echo-whispers-server/config.json
-API_KEY=your-api-key
-AMAZON_PAGE=amazon.com
-ACCEPT_LANGUAGE=en-US,en;q=0.9
-ALEXA_SERVICE_HOST=pitangui.amazon.com
-AMAZON_PAGE_PROXY_LANGUAGE=en_US
-```
-
-Example:
-
-```bash
-PORT=8585 PROXY_PORT=8586 node server.js
-```
 
 ---
 
-## Run as a systemd Service
+## Run with PM2
 
-Create a service file:
+PM2 is a good way to keep Echo Whispers running in the background and restart it automatically if it exits.
 
-```bash
-sudo nano /etc/systemd/system/echo-whispers.service
-```
-
-Paste this:
-
-```ini
-[Unit]
-Description=Echo Whispers Server
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/echo-whispers-server
-ExecStart=/usr/bin/node /opt/echo-whispers-server/server.js
-Restart=always
-RestartSec=5
-User=YOUR_LINUX_USER
-Group=YOUR_LINUX_USER
-Environment=PORT=8585
-Environment=PROXY_PORT=8586
-Environment=CONFIG_FILE=/opt/echo-whispers-server/config.json
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Replace:
-
-```text
-YOUR_LINUX_USER
-```
-
-with your actual Linux username.
-
-Find it with:
+Install PM2 globally:
 
 ```bash
-whoami
+sudo npm install -g pm2
 ```
 
-Enable and start:
+Start Echo Whispers:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable echo-whispers
-sudo systemctl start echo-whispers
+cd /opt/echo-whispers-server
+pm2 start server.js --name echo-whispers
 ```
 
 Check status:
 
 ```bash
-sudo systemctl status echo-whispers
+pm2 status
 ```
 
 View logs:
 
 ```bash
-journalctl -u echo-whispers -f
+pm2 logs echo-whispers
 ```
 
-Restart after changes:
+Restart:
 
 ```bash
-sudo systemctl restart echo-whispers
+pm2 restart echo-whispers
+```
+
+Stop:
+
+```bash
+pm2 stop echo-whispers
+```
+
+Delete the PM2 app entry:
+
+```bash
+pm2 delete echo-whispers
+```
+
+Save the PM2 process list so it can restart after reboot:
+
+```bash
+pm2 save
+```
+
+Enable PM2 startup on boot:
+
+```bash
+pm2 startup
+```
+
+PM2 will print a command that starts with `sudo env ...`. Copy and run that exact command.
+
+Then save again:
+
+```bash
+pm2 save
+```
+
+---
+
+## PM2 Log Rotation
+
+Install the PM2 log rotation module:
+
+```bash
+pm2 install pm2-logrotate
+```
+
+Recommended settings:
+
+```bash
+pm2 set pm2-logrotate:max_size 10M
+pm2 set pm2-logrotate:retain 14
+pm2 set pm2-logrotate:compress true
+pm2 set pm2-logrotate:dateFormat YYYY-MM-DD_HH-mm-ss
+pm2 set pm2-logrotate:rotateInterval '0 0 * * *'
+```
+
+What those do:
+
+```text
+max_size       Rotate a log file after it reaches 10 MB
+retain         Keep 14 rotated logs
+compress       Compress old rotated logs
+dateFormat     Add date/time to rotated log files
+rotateInterval Also rotate once per day at midnight
+```
+
+Force a manual rotation:
+
+```bash
+pm2 trigger pm2-logrotate rotate
+```
+
+PM2 log files are usually under:
+
+```text
+~/.pm2/logs/
+```
+
+View current log paths:
+
+```bash
+pm2 describe echo-whispers
 ```
 
 ---
@@ -283,7 +267,7 @@ sudo systemctl restart echo-whispers
 cd /opt/echo-whispers-server
 git pull
 npm install
-sudo systemctl restart echo-whispers
+pm2 restart echo-whispers
 ```
 
 If you run manually:
@@ -299,7 +283,7 @@ node server.js
 
 # API Usage
 
-Set a base URL for examples:
+Set a base URL for API examples:
 
 ```bash
 BASE_URL="http://YOUR_SERVER_IP:8585"
@@ -882,24 +866,10 @@ curl -s -X POST "$BASE_URL/api/auth/refresh-cookie" \
 
 If needed, perform Amazon Login again from the UI.
 
-### Port already in use
-
-Check what is using port 8585:
+### View PM2 logs
 
 ```bash
-sudo lsof -i :8585
-```
-
-Use another port:
-
-```bash
-PORT=8595 PROXY_PORT=8596 node server.js
-```
-
-### View service logs
-
-```bash
-journalctl -u echo-whispers -f
+pm2 logs echo-whispers
 ```
 
 ---
