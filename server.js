@@ -46,6 +46,9 @@ const DEFAULT_ECHO_SPEAKS_VERSION = '2.8.0';
 const APP_NAME = 'Echo Whispers';
 const REQUEST_TIMEOUT_MS = 15000;
 const MAX_DEBUG_RESPONSE_CHARS = 2000;
+const PACKAGE_JSON_VERSION_URL = 'https://raw.githubusercontent.com/bloodtick/echo-whispers-server/refs/heads/main/package.json';
+const DAILY_MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const COOKIE_AUTO_REFRESH_DAYS = 10;
 
 
 let alexa = new AlexaRemote();
@@ -57,6 +60,7 @@ let lastError = null;
 let lastInitAt = null;
 let devicesCache = [];
 let defaultDevice = null;
+let isDailyMaintenanceRunning = false;
 
 let lastCapturedRegistrationDeviceName = '';
 
@@ -132,7 +136,17 @@ function defaultConfig() {
     hubitatLastAction: null,
     hubitatLastEndpoint: null,
     hubitatLastResponseStatusCode: null,
-    hubitatLastResponseBody: null
+    hubitatLastResponseBody: null,
+    latestVersion: null,
+    versionUpdateAvailable: false,
+    versionCheckUrl: PACKAGE_JSON_VERSION_URL,
+    lastVersionCheckAt: null,
+    lastVersionCheckError: null,
+    lastDailyMaintenanceAt: null,
+    lastDailyMaintenanceError: null,
+    lastAutoCookieRefreshAt: null,
+    lastAutoCookieRefreshStatus: null,
+    lastAutoCookieRefreshError: null
   };
 }
 
@@ -1552,6 +1566,194 @@ async function safeHubitatAction(label, fn) {
   }
 }
 
+function compareVersions(a, b) {
+  const pa = String(a || '').replace(/^v/i, '').split('.').map(n => Number.parseInt(n, 10) || 0);
+  const pb = String(b || '').replace(/^v/i, '').split('.').map(n => Number.parseInt(n, 10) || 0);
+  const len = Math.max(pa.length, pb.length, 3);
+
+  for (let i = 0; i < len; i++) {
+    const av = pa[i] || 0;
+    const bv = pb[i] || 0;
+    if (av > bv) return 1;
+    if (av < bv) return -1;
+  }
+
+  return 0;
+}
+
+function fetchJsonUrl(targetUrl) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try {
+      u = new URL(targetUrl);
+    } catch (err) {
+      return reject(new Error(`Invalid URL: ${targetUrl}`));
+    }
+
+    const client = u.protocol === 'https:' ? https : http;
+    const req = client.request({
+      protocol: u.protocol,
+      hostname: u.hostname,
+      port: u.port || (u.protocol === 'https:' ? 443 : 80),
+      path: `${u.pathname}${u.search}`,
+      method: 'GET',
+      timeout: REQUEST_TIMEOUT_MS,
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': `${APP_NAME}/${APP_VERSION}`
+      }
+    }, res => {
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          return reject(new Error(`GET ${targetUrl} failed: HTTP ${res.statusCode}`));
+        }
+
+        try {
+          resolve(JSON.parse(data));
+        } catch (err) {
+          reject(new Error(`GET ${targetUrl} returned invalid JSON`));
+        }
+      });
+    });
+
+    req.on('timeout', () => req.destroy(new Error(`GET ${targetUrl} timed out`)));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function checkLatestVersion() {
+  try {
+    const pkg = await fetchJsonUrl(PACKAGE_JSON_VERSION_URL);
+    const latestVersion = pkg && pkg.version ? String(pkg.version).trim() : '';
+    if (!latestVersion) throw new Error('package.json did not contain a version');
+
+    const updateAvailable = compareVersions(latestVersion, APP_VERSION) > 0;
+    saveConfig({
+      latestVersion,
+      versionUpdateAvailable: updateAvailable,
+      versionCheckUrl: PACKAGE_JSON_VERSION_URL,
+      lastVersionCheckAt: new Date().toISOString(),
+      lastVersionCheckError: null
+    });
+
+    console.log(`[MAINTENANCE] version check complete: current=${APP_VERSION} latest=${latestVersion} updateAvailable=${updateAvailable}`);
+    return { ok: true, latestVersion, updateAvailable };
+  } catch (err) {
+    saveConfig({
+      versionCheckUrl: PACKAGE_JSON_VERSION_URL,
+      lastVersionCheckAt: new Date().toISOString(),
+      lastVersionCheckError: safeError(err)
+    });
+    throw err;
+  }
+}
+
+async function refreshCookieForMaintenance() {
+  const refreshResult = await refreshCookieFromRefreshToken();
+
+  isInitialized = false;
+  devicesCache = [];
+  defaultDevice = null;
+  await initRuntimeDirect(true);
+
+  const hubitatSync = config.hubitatCompatEnabled
+    ? await safeHubitatAction('send cookie after daily maintenance refresh', () => sendCookiesToHubitat())
+    : { skipped: true, reason: 'Hubitat compatibility disabled' };
+
+  saveConfig({
+    lastAutoCookieRefreshAt: new Date().toISOString(),
+    lastAutoCookieRefreshStatus: 'refreshed',
+    lastAutoCookieRefreshError: null
+  });
+
+  return { refreshResult, hubitatSync };
+}
+
+async function runDailyMaintenance(force = false) {
+  if (isDailyMaintenanceRunning) return { skipped: true, reason: 'Daily maintenance already running' };
+
+  const lastRunMs = Date.parse(config.lastDailyMaintenanceAt || '');
+  if (!force && Number.isFinite(lastRunMs) && Date.now() - lastRunMs < DAILY_MAINTENANCE_INTERVAL_MS) {
+    return { skipped: true, reason: 'Daily maintenance already ran in the last 24 hours' };
+  }
+
+  isDailyMaintenanceRunning = true;
+  const startedAt = new Date().toISOString();
+  const result = {
+    versionCheck: null,
+    cookieRefresh: null
+  };
+
+  try {
+    saveConfig({
+      lastDailyMaintenanceAt: startedAt,
+      lastDailyMaintenanceError: null
+    });
+
+    try {
+      result.versionCheck = await checkLatestVersion();
+    } catch (err) {
+      result.versionCheck = { ok: false, error: safeError(err) };
+      console.warn('[MAINTENANCE] version check failed:', safeError(err));
+    }
+
+    const cookieAgeDays = getCookieAgeDays();
+    if (cookieAgeDays !== null && cookieAgeDays >= COOKIE_AUTO_REFRESH_DAYS && config.refreshToken && !config.fullReauthRequired) {
+      try {
+        result.cookieRefresh = await refreshCookieForMaintenance();
+      } catch (err) {
+        result.cookieRefresh = { ok: false, error: safeError(err) };
+        saveConfig({
+          lastAutoCookieRefreshAt: new Date().toISOString(),
+          lastAutoCookieRefreshStatus: 'failed',
+          lastAutoCookieRefreshError: safeError(err)
+        });
+        console.warn('[MAINTENANCE] auto cookie refresh failed:', safeError(err));
+      }
+    } else {
+      result.cookieRefresh = {
+        skipped: true,
+        reason: cookieAgeDays === null
+          ? 'Cookie age unknown'
+          : `Cookie age ${cookieAgeDays} days is below ${COOKIE_AUTO_REFRESH_DAYS} days`
+      };
+      saveConfig({
+        lastAutoCookieRefreshStatus: result.cookieRefresh.reason,
+        lastAutoCookieRefreshError: null
+      });
+    }
+
+    return result;
+  } catch (err) {
+    saveConfig({
+      lastDailyMaintenanceError: safeError(err)
+    });
+    throw err;
+  } finally {
+    isDailyMaintenanceRunning = false;
+  }
+}
+
+function scheduleDailyMaintenance() {
+  setTimeout(() => {
+    runDailyMaintenance(false).catch(err => {
+      lastError = err;
+      console.warn('[MAINTENANCE] startup daily maintenance failed:', safeError(err));
+    });
+  }, 10000);
+
+  setInterval(() => {
+    runDailyMaintenance(true).catch(err => {
+      lastError = err;
+      console.warn('[MAINTENANCE] scheduled daily maintenance failed:', safeError(err));
+    });
+  }, DAILY_MAINTENANCE_INTERVAL_MS);
+}
+
 async function refreshCookieForEchoSpeaks(req) {
   const refreshResult = await refreshCookieFromRefreshToken();
 
@@ -2260,7 +2462,20 @@ function publicStatus() {
     hubitatLastAction: config.hubitatLastAction || null,
     hubitatLastEndpoint: config.hubitatLastEndpoint || null,
     hubitatLastResponseStatusCode: config.hubitatLastResponseStatusCode || null,
-    hubitatLastResponseBody: config.hubitatLastResponseBody || null
+    hubitatLastResponseBody: config.hubitatLastResponseBody || null,
+
+    appVersion: APP_VERSION,
+    latestVersion: config.latestVersion || null,
+    versionUpdateAvailable: !!config.versionUpdateAvailable,
+    versionCheckUrl: config.versionCheckUrl || PACKAGE_JSON_VERSION_URL,
+    lastVersionCheckAt: config.lastVersionCheckAt || null,
+    lastVersionCheckError: config.lastVersionCheckError || null,
+    lastDailyMaintenanceAt: config.lastDailyMaintenanceAt || null,
+    lastDailyMaintenanceError: config.lastDailyMaintenanceError || null,
+    lastAutoCookieRefreshAt: config.lastAutoCookieRefreshAt || null,
+    lastAutoCookieRefreshStatus: config.lastAutoCookieRefreshStatus || null,
+    lastAutoCookieRefreshError: config.lastAutoCookieRefreshError || null,
+    cookieAutoRefreshDays: COOKIE_AUTO_REFRESH_DAYS
   };
 }
 
@@ -2711,6 +2926,11 @@ textarea:disabled {
   align-self: flex-end;
 }
 
+.version-notice {
+  color: #d00000;
+  font-weight: 700;
+}
+
 .section-title-blue > summary,
 details.section-title-blue > summary {
   color: ${COLOR_DARK_BLUE};
@@ -2868,6 +3088,7 @@ details.section-title-blue > summary {
   <div class="app-header-meta">
     <div>Developed by: ${APP_AUTHOR}</div>
     <div>Current Version: v${APP_VERSION} - ${APP_COPYRIGHT}</div>
+    <div id="versionNotice" class="version-notice"></div>
   </div>
 </div>
 
@@ -3190,10 +3411,22 @@ function updateSpeakGetLink() {
   link.textContent = url;
 }
 
+function updateVersionNotice(s) {
+  const notice = document.getElementById('versionNotice');
+  if (!notice) return;
+
+  if (s && s.versionUpdateAvailable && s.latestVersion) {
+    notice.textContent = 'New version available: v' + s.latestVersion;
+  } else {
+    notice.textContent = '';
+  }
+}
+
 async function status() {
   const s = await api('/api/status');
   window.echoWhispersStatus = s;
   applyStatusUiState(s);
+  updateVersionNotice(s);
 
   const auth = document.getElementById('authInfo');
   if (auth) {
@@ -3695,6 +3928,15 @@ app.get('/api/config', requireApiKey, (req, res) => {
 
 
 app.get('/api/status', (req, res) => res.json(publicStatus()));
+
+app.post('/api/maintenance/check', requireApiKey, async (req, res) => {
+  try {
+    const result = await runDailyMaintenance(true);
+    res.json({ ok: true, result, status: publicStatus() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: safeError(err), status: publicStatus() });
+  }
+});
 
 
 app.get('/api/hubitat/status', requireApiKey, (req, res) => {
@@ -5034,4 +5276,5 @@ process.on('uncaughtException', err => {
 app.listen(getServerPort(), '0.0.0.0', () => {
   console.log(`Echo Whispers listening on http://0.0.0.0:${getServerPort()}`);
   console.log(`Open http://localhost:${getServerPort()}/`);
+  scheduleDailyMaintenance();
 });
