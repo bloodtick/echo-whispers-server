@@ -33,7 +33,7 @@ const STATIC_IMAGES_DIR = path.join(__dirname, 'images');
 app.use('/images', express.static(STATIC_IMAGES_DIR));
 const PORT = Number(process.env.PORT || 8585);
 const DEFAULT_PROXY_PORT = PORT + 1;
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
 const APP_AUTHOR = 'Bloodtick Jones';
 const APP_COPYRIGHT = `© 2026 ${APP_AUTHOR}`;
 const COLOR_DARK_BLUE = '#1A77C9';
@@ -3491,8 +3491,12 @@ function echoSpeaksWakeup(req, res) {
 // Echo Speaks compatibility endpoints
 // -----------------------------------------------------------------------------
 
-app.get('/wakeup', echoSpeaksWakeup);
-app.post('/wakeup', echoSpeaksWakeup);
+app.get('/wakeup', wakeupHandler);
+app.post('/wakeup', wakeupHandler);
+
+function wakeupHandler(req, res) {
+  res.type('text/plain').status(200).send('OK');
+}
 
 app.get('/refreshCookie', async (req, res) => {
   try {
