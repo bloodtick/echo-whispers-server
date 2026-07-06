@@ -1552,6 +1552,25 @@ async function safeHubitatAction(label, fn) {
   }
 }
 
+async function refreshCookieForEchoSpeaks(req) {
+  const refreshResult = await refreshCookieFromRefreshToken();
+
+  // Restart direct runtime against the newly saved cookie.
+  isInitialized = false;
+  devicesCache = [];
+  defaultDevice = null;
+  await initRuntimeDirect(true);
+
+  const hubitatSync = config.hubitatCompatEnabled
+    ? await safeHubitatAction('send cookie after Echo Speaks refresh', () => sendCookiesToHubitat(getHostFromRequest(req)))
+    : { skipped: true, reason: 'Hubitat compatibility disabled' };
+
+  return {
+    refreshResult,
+    hubitatSync
+  };
+}
+
 
 async function initRuntimeDirect(force = false) {
   if (isInitialized && !force) return;
@@ -3500,24 +3519,32 @@ function wakeupHandler(req, res) {
 
 app.get('/refreshCookie', async (req, res) => {
   try {
-    const result = await refreshCookieFromRefreshToken();
+    const { refreshResult, hubitatSync } = await refreshCookieForEchoSpeaks(req);
     res.json(Object.assign(buildEchoSpeaksWakeupPayload(getHostFromRequest(req)), {
       refreshed: true,
-      result
+      result: refreshResult,
+      hubitatSync
     }));
   } catch (err) {
+    lastError = err;
+    console.error('[REFRESH_COOKIE] Echo Speaks refresh failed:', err && err.stack ? err.stack : err);
+    saveRefreshFailureState(err);
     res.status(500).json({ ok: false, success: false, error: safeError(err) });
   }
 });
 
 app.post('/refreshCookie', async (req, res) => {
   try {
-    const result = await refreshCookieFromRefreshToken();
+    const { refreshResult, hubitatSync } = await refreshCookieForEchoSpeaks(req);
     res.json(Object.assign(buildEchoSpeaksWakeupPayload(getHostFromRequest(req)), {
       refreshed: true,
-      result
+      result: refreshResult,
+      hubitatSync
     }));
   } catch (err) {
+    lastError = err;
+    console.error('[REFRESH_COOKIE] Echo Speaks refresh failed:', err && err.stack ? err.stack : err);
+    saveRefreshFailureState(err);
     res.status(500).json({ ok: false, success: false, error: safeError(err) });
   }
 });
