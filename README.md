@@ -60,6 +60,22 @@ npm -v
 
 You should see Node 20.x or newer.
 
+### Older Raspberry Pi Models
+
+Some older Raspberry Pi models may not be able to install a current version of Node.js using the standard NodeSource packages.
+
+If your Pi is limited to an older Node.js version, such as Node 12, you can use the unofficial Node.js builds:
+
+    curl -fsSLO https://unofficial-builds.nodejs.org/install-node.sh
+    bash install-node.sh -l 20
+
+Node.js 20 is recommended. Newer Node.js releases may not work on some older Raspberry Pi hardware.
+
+Verify the installation:
+
+    node -v
+    npm -v
+
 ---
 
 ## Clone the Repository
@@ -118,6 +134,21 @@ http://10.0.0.117:8585/
 7. Pick an Echo device.
 8. Type a message.
 9. Click `Speak`.
+
+## 🌎 Regional Settings
+
+Use the following settings for your Amazon/Alexa region:
+
+| Region | Amazon Page | Accept Language | Proxy Language | Alexa Service Host |
+|:---|:---|:---|:---|:---|
+| 🇺🇸 **US** | `amazon.com` | `en-US,en;q=0.9` | `en_US` | `pitangui.amazon.com` |
+| 🇬🇧 **UK** | `amazon.co.uk` | `en-GB,en;q=0.9` | `en_GB` | `layla.amazon.com` |
+| 🇩🇪 **Germany** | `amazon.de` | `de-DE,de;q=0.9` | `de_DE` | `layla.amazon.de` |
+| 🇫🇷 **France** | `amazon.fr` | `fr-FR,fr;q=0.9` | `fr_FR` | `layla.amazon.de` |
+| 🇮🇹 **Italy** | `amazon.it` | `it-IT,it;q=0.9` | `it_IT` | `alexa.amazon.it` |
+| 🇪🇸 **Spain** | `amazon.es` | `es-ES,es;q=0.9` | `es_ES` | `alexa.amazon.es` |
+| 🇦🇺 **Australia** | `amazon.com.au` | `en-AU,en;q=0.9` | `en_AU` | `alexa.amazon.com.au` |
+| 🇧🇷 **Brazil** | `amazon.com.br` | `pt-BR,pt;q=0.9` | `pt_BR` | `alexa.amazon.com.br` |
 
 ---
 
