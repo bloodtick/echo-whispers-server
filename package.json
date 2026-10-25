@@ -1,6 +1,6 @@
 {
   "name": "echo-whispers",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Local Alexa/Echo REST bridge with optional Hubitat compatibility.",
   "main": "server.js",
   "scripts": {

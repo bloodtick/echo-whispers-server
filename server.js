@@ -33,7 +33,7 @@ const STATIC_IMAGES_DIR = path.join(__dirname, 'images');
 app.use('/images', express.static(STATIC_IMAGES_DIR));
 const PORT = Number(process.env.PORT || 8585);
 const DEFAULT_PROXY_PORT = PORT + 1;
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.0.3';
 const APP_AUTHOR = 'Bloodtick Jones';
 const APP_COPYRIGHT = `© 2026 ${APP_AUTHOR}`;
 const COLOR_DARK_BLUE = '#1A77C9';
@@ -60,6 +60,10 @@ let lastError = null;
 let lastInitAt = null;
 let devicesCache = [];
 let defaultDevice = null;
+// Lazy device discovery: refresh only on a request, at most once per 15 minutes.
+const DEVICE_DISCOVERY_TTL_MS = 15 * 60 * 1000;
+let lastDeviceDiscoveryAt = 0;
+let deviceDiscoveryInFlight = null;
 let isDailyMaintenanceRunning = false;
 
 let lastCapturedRegistrationDeviceName = '';
@@ -1657,6 +1661,7 @@ async function refreshCookieForMaintenance() {
 
   isInitialized = false;
   devicesCache = [];
+  lastDeviceDiscoveryAt = 0;
   defaultDevice = null;
   await initRuntimeDirect(true);
 
@@ -1760,6 +1765,7 @@ async function refreshCookieForEchoSpeaks(req) {
   // Restart direct runtime against the newly saved cookie.
   isInitialized = false;
   devicesCache = [];
+  lastDeviceDiscoveryAt = 0;
   defaultDevice = null;
   await initRuntimeDirect(true);
 
@@ -1814,6 +1820,7 @@ async function restartDirectRuntimeAfterSavedProxyLogin(reqHost) {
   isInitialized = false;
   isInitializing = false;
   devicesCache = [];
+  lastDeviceDiscoveryAt = 0;
   defaultDevice = null;
 
   try {
@@ -1907,6 +1914,7 @@ function initAlexa(force = false, mode = 'runtime', reqHost = null) {
     alexa = new AlexaRemote();
     isInitialized = false;
     devicesCache = [];
+  lastDeviceDiscoveryAt = 0;
     defaultDevice = null;
   }
 
@@ -2024,13 +2032,26 @@ function pickDefaultDevice(devices) {
   return devices.find(d => d.online && d.serialNumber && d.deviceType) || null;
 }
 
-function refreshDevices() {
+function refreshDevices(force = false) {
   if (!isInitialized) return Promise.reject(new Error('Not initialized'));
 
-  return directRequest('GET', `/api/devices-v2/device?cached=true&_=${Date.now()}`)
+  // Reuse discovery for up to 15 minutes unless a full status request forces refresh.
+  // Never schedule a background refresh; only a caller can trigger discovery.
+  if (!force && devicesCache.length && Date.now() - lastDeviceDiscoveryAt < DEVICE_DISCOVERY_TTL_MS) {
+    return Promise.resolve(devicesCache);
+  }
+
+  // Concurrent requests share one Amazon discovery request.
+  if (deviceDiscoveryInFlight) return deviceDiscoveryInFlight;
+
+  deviceDiscoveryInFlight = directRequest('GET', `/api/devices-v2/device?cached=false&_=${Date.now()}`)
     .then(res => {
-      devicesCache = res && Array.isArray(res.devices) ? res.devices : [];
+      const discovered = res && Array.isArray(res.devices) ? res.devices : [];
+      // Do not overwrite a working snapshot with an unexpectedly empty response.
+      if (!discovered.length) throw new Error('Amazon device discovery returned no devices');
+      devicesCache = discovered;
       defaultDevice = pickDefaultDevice(devicesCache);
+      lastDeviceDiscoveryAt = Date.now();
       console.log('[DEVICES] found', devicesCache.length, 'default:', defaultDevice ? defaultDevice.accountName : 'none');
       return devicesCache;
     })
@@ -2038,15 +2059,17 @@ function refreshDevices() {
       lastError = err;
       console.error('[DEVICES] error:', err);
       throw err;
-    });
-}
+    })
+    .finally(() => { deviceDiscoveryInFlight = null; });
 
+  return deviceDiscoveryInFlight;
+}
 
 async function getDevicePreferenceDataForSpeak(target) {
   const serial = target && (target.serialNumber || target.deviceSerialNumber || target.serial);
 
   try {
-    const prefs = await directRequest('GET', `/api/device-preferences?cached=true&_=${Date.now()}`);
+    const prefs = await directRequest('GET', `/api/device-preferences?cached=false&_=${Date.now()}`);
     const list = prefs && Array.isArray(prefs.devicePreferences) ? prefs.devicePreferences : [];
 
     const matched = serial
@@ -4075,6 +4098,7 @@ app.post('/api/login/start', requireApiKey, async (req, res) => {
     isInitialized = false;
     isInitializing = false;
     devicesCache = [];
+  lastDeviceDiscoveryAt = 0;
     defaultDevice = null;
 
     isLoginProxyRunning = true;
@@ -4112,6 +4136,7 @@ app.post('/api/auth/refresh-cookie', requireApiKey, async (req, res) => {
     // Restart direct runtime against the newly saved cookie.
     isInitialized = false;
     devicesCache = [];
+  lastDeviceDiscoveryAt = 0;
     defaultDevice = null;
     await initRuntimeDirect(true);
     if (config.hubitatCompatEnabled) {
@@ -4148,6 +4173,7 @@ app.post('/api/auth/full-reauth', requireApiKey, async (req, res) => {
     isInitialized = false;
     isInitializing = false;
     devicesCache = [];
+  lastDeviceDiscoveryAt = 0;
     defaultDevice = null;
 
     isLoginProxyRunning = true;
@@ -4288,13 +4314,14 @@ async function safeStatusPart(name, fn) {
 }
 
 
-// Lightweight status: one Amazon media-state request; device metadata from cache.
+// Lightweight status: 15-minute lazy discovery plus fresh media-state request.
 app.get('/api/devices/:serialNumber/status-lite', requireApiKey, async (req, res) => {
   const started = Date.now();
   const serial = String(req.params.serialNumber || '').trim();
   let name = serial;
   try {
     await initAlexa(false, 'runtime');
+    await refreshDevices();
     const device = findDeviceBySerial(serial);
     if (!device) {
       console.warn(`[STATUS-LITE] serial=${serial} result=404 device-not-found durationMs=${Date.now() - started}`);
@@ -4305,9 +4332,9 @@ app.get('/api/devices/:serialNumber/status-lite', requireApiKey, async (req, res
     const media = await safeStatusPart('mediaState', () => getDeviceMediaState(device));
     const volume = media.ok ? getVolumeFromStatusResponse(media.data) : null;
     if (!media.ok) {
-      console.warn(`[STATUS-LITE] name=${JSON.stringify(name)} serial=${serial} online=${online} volume=null amazonCalls=1 durationMs=${Date.now() - started} error=${JSON.stringify(media.error)}`);
+      console.warn(`[STATUS-LITE] name=${JSON.stringify(name)} serial=${serial} online=${online} volume=null amazonCalls=${Date.now() - lastDeviceDiscoveryAt < 3000 ? 2 : 1} durationMs=${Date.now() - started} error=${JSON.stringify(media.error)}`);
     } else {
-      console.log(`[STATUS-LITE] name=${JSON.stringify(name)} serial=${serial} online=${online} volume=${volume === null ? 'null' : volume} amazonCalls=1 durationMs=${Date.now() - started}`);
+      console.log(`[STATUS-LITE] name=${JSON.stringify(name)} serial=${serial} online=${online} volume=${volume === null ? 'null' : volume} amazonCalls=${Date.now() - lastDeviceDiscoveryAt < 3000 ? 2 : 1} durationMs=${Date.now() - started}`);
     }
     return res.json({
       ok: true,
@@ -4329,6 +4356,7 @@ app.get('/api/devices/:serialNumber/status-lite', requireApiKey, async (req, res
 app.get('/api/devices/:serialNumber/status', requireApiKey, async (req, res) => {
   try {
     await initAlexa(false, 'runtime');
+    await refreshDevices(true);
 
     const serial = String(req.params.serialNumber || '').trim();
     const device = findDeviceBySerial(serial);
@@ -4386,6 +4414,7 @@ app.get('/api/devices/:serialNumber/status', requireApiKey, async (req, res) => 
 app.get('/api/devices/:serialNumber', requireApiKey, async (req, res) => {
   try {
     await initAlexa(false, 'runtime');
+    await refreshDevices();
 
     const serial = String(req.params.serialNumber || '').trim();
 
@@ -4755,7 +4784,7 @@ async function handleSpeakRequest(req, res) {
     }
 
     if (!isInitialized) await initAlexa(false, 'runtime', getHostFromRequest(req));
-    if (!devicesCache.length) await refreshDevices();
+    await refreshDevices();
 
     target = findTarget(data);
     if (!target) {
@@ -4888,7 +4917,7 @@ async function handleVolumeRequest(req, res) {
     }
 
     if (!isInitialized) await initAlexa(false, 'runtime', getHostFromRequest(req));
-    if (!devicesCache.length) await refreshDevices();
+    await refreshDevices();
 
     const target = findTarget(data);
     if (!target) {
@@ -5052,7 +5081,7 @@ function uniqueAnnouncementDevices(devices) {
 
 async function getAnnouncementPreferenceData(devices) {
   try {
-    const prefs = await directRequest('GET', `/api/device-preferences?cached=true&_=${Date.now()}`);
+    const prefs = await directRequest('GET', `/api/device-preferences?cached=false&_=${Date.now()}`);
     const list = prefs && Array.isArray(prefs.devicePreferences) ? prefs.devicePreferences : [];
 
     const firstWithCustomer = list.find(p => p && p.searchCustomerId) || null;
@@ -5181,7 +5210,7 @@ async function handleAnnounceRequest(req, res) {
     }
 
     if (!isInitialized) await initAlexa(false, 'runtime', getHostFromRequest(req));
-    if (!devicesCache.length) await refreshDevices();
+    await refreshDevices();
 
     const allMode =
       req.path.endsWith('/all') ||
@@ -5276,6 +5305,7 @@ app.post('/api/clear', requireApiKey, (req, res) => {
     lastError = null;
     lastInitAt = null;
     devicesCache = [];
+  lastDeviceDiscoveryAt = 0;
     defaultDevice = null;
 
     res.json(publicStatus());
@@ -5291,6 +5321,7 @@ app.post('/api/reset-registration', requireApiKey, async (req, res) => {
     isInitialized = false;
     isInitializing = false;
     devicesCache = [];
+  lastDeviceDiscoveryAt = 0;
     defaultDevice = null;
     res.json(Object.assign(publicStatus(), {
       ok: true,
