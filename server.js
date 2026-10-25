@@ -33,7 +33,7 @@ const STATIC_IMAGES_DIR = path.join(__dirname, 'images');
 app.use('/images', express.static(STATIC_IMAGES_DIR));
 const PORT = Number(process.env.PORT || 8585);
 const DEFAULT_PROXY_PORT = PORT + 1;
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.2';
 const APP_AUTHOR = 'Bloodtick Jones';
 const APP_COPYRIGHT = `© 2026 ${APP_AUTHOR}`;
 const COLOR_DARK_BLUE = '#1A77C9';
@@ -4287,6 +4287,44 @@ async function safeStatusPart(name, fn) {
   }
 }
 
+
+// Lightweight status: one Amazon media-state request; device metadata from cache.
+app.get('/api/devices/:serialNumber/status-lite', requireApiKey, async (req, res) => {
+  const started = Date.now();
+  const serial = String(req.params.serialNumber || '').trim();
+  let name = serial;
+  try {
+    await initAlexa(false, 'runtime');
+    const device = findDeviceBySerial(serial);
+    if (!device) {
+      console.warn(`[STATUS-LITE] serial=${serial} result=404 device-not-found durationMs=${Date.now() - started}`);
+      return res.status(404).json({ ok: false, error: 'Device not found', serialNumber: serial });
+    }
+    name = device.accountName || device.friendlyName || device.name || serial;
+    const online = device.online === true;
+    const media = await safeStatusPart('mediaState', () => getDeviceMediaState(device));
+    const volume = media.ok ? getVolumeFromStatusResponse(media.data) : null;
+    if (!media.ok) {
+      console.warn(`[STATUS-LITE] name=${JSON.stringify(name)} serial=${serial} online=${online} volume=null amazonCalls=1 durationMs=${Date.now() - started} error=${JSON.stringify(media.error)}`);
+    } else {
+      console.log(`[STATUS-LITE] name=${JSON.stringify(name)} serial=${serial} online=${online} volume=${volume === null ? 'null' : volume} amazonCalls=1 durationMs=${Date.now() - started}`);
+    }
+    return res.json({
+      ok: true,
+      accountName: name,
+      serialNumber: serial,
+      deviceType: getDeviceType(device),
+      online,
+      volume,
+      volumeOk: media.ok,
+      ...(media.ok ? {} : { volumeError: media.error })
+    });
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    console.error(`[STATUS-LITE] name=${JSON.stringify(name)} serial=${serial} result=500 durationMs=${Date.now() - started} error=${JSON.stringify(message)}`);
+    return res.status(500).json({ ok: false, error: message, serialNumber: serial });
+  }
+});
 
 app.get('/api/devices/:serialNumber/status', requireApiKey, async (req, res) => {
   try {
