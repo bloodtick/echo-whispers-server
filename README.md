@@ -5,12 +5,13 @@ Echo Whispers Server is a local REST bridge for Amazon Echo / Alexa devices.
 It provides a small web UI and REST API for:
 
 - Amazon login and cookie refresh
-- Loading Echo devices
+- Discovering Echo devices and checking device status
 - Speaking text on a selected Echo
-- Optional volume control before speaking
-- Optional restore-volume behavior after speaking
-- Announcements
+- Optional volume control and restore-volume behavior when speaking
+- Announcements to one, multiple, or all available Echo devices
 - Hubitat / Echo Speaks compatibility endpoints
+
+**Speak** sends text-to-speech to an individual Echo. **Announce** sends one Amazon announcement request for the selected devices and excludes devices reported offline. Announcements may play the usual Alexa announcement chime.
 
 The server is designed to run on Linux-like systems, including Raspberry Pi, Ubuntu, Debian, Proxmox containers, small home servers, or similar always-on machines.
 
@@ -27,7 +28,7 @@ The server is designed to run on Linux-like systems, including Raspberry Pi, Ubu
 Recommended:
 
 - Node.js 20 LTS or newer
-- pm2 for running as a background service
+- PM2 for running as a background service
 
 ---
 
@@ -42,7 +43,7 @@ node -v
 npm -v
 ```
 
-If Node is missing or too old, install Node.js LTS using NodeSource:
+If Node is missing or too old, install a supported Node.js version. For example, to install Node.js 20 using NodeSource:
 
 ```bash
 sudo apt update
@@ -58,23 +59,9 @@ node -v
 npm -v
 ```
 
-You should see Node 20.x or newer.
-
 ### Older Raspberry Pi Models
 
-Some older Raspberry Pi models may not be able to install a current version of Node.js using the standard NodeSource packages.
-
-If your Pi is limited to an older Node.js version, such as Node 12, you can use the unofficial Node.js builds:
-
-    curl -fsSLO https://unofficial-builds.nodejs.org/install-node.sh
-    bash install-node.sh -l 20
-
-Node.js 20 is recommended. Newer Node.js releases may not work on some older Raspberry Pi hardware.
-
-Verify the installation:
-
-    node -v
-    npm -v
+Some older Raspberry Pi models may not support current Node.js packages. Check the CPU architecture and available builds before installing. Node.js 20 or newer is recommended where supported.
 
 ---
 
@@ -108,7 +95,6 @@ Or directly:
 node server.js
 ```
 
-
 Open the UI:
 
 ```text
@@ -118,7 +104,7 @@ http://YOUR_SERVER_IP:8585/
 Example:
 
 ```text
-http://10.0.0.117:8585/
+http://192.0.2.10:8585/
 ```
 
 ---
@@ -135,20 +121,22 @@ http://10.0.0.117:8585/
 8. Type a message.
 9. Click `Speak`.
 
-## 🌎 Regional Settings
+---
+
+## Regional Settings
 
 Use the following settings for your Amazon/Alexa region:
 
 | Region | Amazon Page | Accept Language | Proxy Language | Alexa Service Host |
 |:---|:---|:---|:---|:---|
-| 🇺🇸 **US** | `amazon.com` | `en-US,en;q=0.9` | `en_US` | `pitangui.amazon.com` |
-| 🇬🇧 **UK** | `amazon.co.uk` | `en-GB,en;q=0.9` | `en_GB` | `layla.amazon.com` |
-| 🇩🇪 **Germany** | `amazon.de` | `de-DE,de;q=0.9` | `de_DE` | `layla.amazon.de` |
-| 🇫🇷 **France** | `amazon.fr` | `fr-FR,fr;q=0.9` | `fr_FR` | `layla.amazon.de` |
-| 🇮🇹 **Italy** | `amazon.it` | `it-IT,it;q=0.9` | `it_IT` | `alexa.amazon.it` |
-| 🇪🇸 **Spain** | `amazon.es` | `es-ES,es;q=0.9` | `es_ES` | `alexa.amazon.es` |
-| 🇦🇺 **Australia** | `amazon.com.au` | `en-AU,en;q=0.9` | `en_AU` | `alexa.amazon.com.au` |
-| 🇧🇷 **Brazil** | `amazon.com.br` | `pt-BR,pt;q=0.9` | `pt_BR` | `alexa.amazon.com.br` |
+| US | `amazon.com` | `en-US,en;q=0.9` | `en_US` | `pitangui.amazon.com` |
+| UK | `amazon.co.uk` | `en-GB,en;q=0.9` | `en_GB` | `layla.amazon.com` |
+| Germany | `amazon.de` | `de-DE,de;q=0.9` | `de_DE` | `layla.amazon.de` |
+| France | `amazon.fr` | `fr-FR,fr;q=0.9` | `fr_FR` | `layla.amazon.de` |
+| Italy | `amazon.it` | `it-IT,it;q=0.9` | `it_IT` | `alexa.amazon.it` |
+| Spain | `amazon.es` | `es-ES,es;q=0.9` | `es_ES` | `alexa.amazon.es` |
+| Australia | `amazon.com.au` | `en-AU,en;q=0.9` | `en_AU` | `alexa.amazon.com.au` |
+| Brazil | `amazon.com.br` | `pt-BR,pt;q=0.9` | `pt_BR` | `alexa.amazon.com.br` |
 
 ---
 
@@ -162,13 +150,11 @@ config.json
 
 By default, it is created in the same directory as `server.js`.
 
-
-
 ---
 
 ## Run with PM2
 
-PM2 is a good way to keep Echo Whispers running in the background and restart it automatically if it exits.
+PM2 keeps Echo Whispers running in the background and restarts it automatically if it exits.
 
 Install PM2 globally:
 
@@ -225,9 +211,7 @@ Enable PM2 startup on boot:
 pm2 startup
 ```
 
-PM2 will print a command that starts with `sudo env ...`. Copy and run that exact command.
-
-Then save again:
+PM2 will print a command starting with `sudo env ...`. Copy and run that exact command, then save again:
 
 ```bash
 pm2 save
@@ -305,7 +289,7 @@ node server.js
 
 # API Usage
 
-Set a base URL for API examples:
+Set a base URL for the examples:
 
 ```bash
 BASE_URL="http://YOUR_SERVER_IP:8585"
@@ -314,26 +298,28 @@ BASE_URL="http://YOUR_SERVER_IP:8585"
 Example:
 
 ```bash
-BASE_URL="http://10.0.0.117:8585"
+BASE_URL="http://192.0.2.10:8585"
 ```
 
-If API Key is enabled:
+If API key authentication is enabled:
 
 ```bash
 API_KEY="YOUR_API_KEY"
 ```
 
-Use it as a header:
+Pass the key as a header:
 
 ```bash
 -H "x-api-key: $API_KEY"
 ```
 
-or as a query parameter:
+Or as a query parameter:
 
 ```text
 ?apiKey=YOUR_API_KEY
 ```
+
+The examples below omit the key for readability. Add it if your server requires authentication.
 
 ---
 
@@ -341,7 +327,7 @@ or as a query parameter:
 
 ### `GET /health`
 
-Basic health check.
+Basic health check:
 
 ```bash
 curl -s "$BASE_URL/health"
@@ -349,7 +335,7 @@ curl -s "$BASE_URL/health"
 
 ### `GET /api/status`
 
-Returns runtime status, cookie status, device count, Hubitat status, and config visibility.
+Returns runtime status, cookie status, device count, Hubitat status, and configuration visibility:
 
 ```bash
 curl -s "$BASE_URL/api/status"
@@ -358,8 +344,7 @@ curl -s "$BASE_URL/api/status"
 With API key:
 
 ```bash
-curl -s "$BASE_URL/api/status" \
-  -H "x-api-key: $API_KEY"
+curl -s "$BASE_URL/api/status" -H "x-api-key: $API_KEY"
 ```
 
 ---
@@ -368,16 +353,15 @@ curl -s "$BASE_URL/api/status" \
 
 ### `GET /api/config`
 
-Returns current configuration and status.
+Returns current configuration and status:
 
 ```bash
-curl -s "$BASE_URL/api/config" \
-  -H "x-api-key: $API_KEY"
+curl -s "$BASE_URL/api/config" -H "x-api-key: $API_KEY"
 ```
 
 ### `POST /api/config`
 
-Updates configuration.
+Updates configuration:
 
 ```bash
 curl -s -X POST "$BASE_URL/api/config" \
@@ -401,9 +385,7 @@ Clear the API key:
 curl -s -X POST "$BASE_URL/api/config" \
   -H "Content-Type: application/json" \
   -H "x-api-key: $API_KEY" \
-  -d '{
-    "apiKey": ""
-  }'
+  -d '{"apiKey":""}'
 ```
 
 ---
@@ -412,49 +394,42 @@ curl -s -X POST "$BASE_URL/api/config" \
 
 ### `POST /api/login/start`
 
-Starts the Amazon Login proxy flow.
+Starts the Amazon Login proxy flow. Open the returned `proxyUrl` in a browser:
 
 ```bash
-curl -s -X POST "$BASE_URL/api/login/start" \
-  -H "x-api-key: $API_KEY"
+curl -s -X POST "$BASE_URL/api/login/start" -H "x-api-key: $API_KEY"
 ```
-
-The response includes a `proxyUrl`. Open that URL in a browser to complete Amazon Login.
 
 ### `POST /api/auth/refresh-cookie`
 
-Refreshes the Amazon cookie using the saved refresh token.
+Refreshes the Amazon cookie using the saved refresh token:
 
 ```bash
-curl -s -X POST "$BASE_URL/api/auth/refresh-cookie" \
-  -H "x-api-key: $API_KEY"
+curl -s -X POST "$BASE_URL/api/auth/refresh-cookie" -H "x-api-key: $API_KEY"
 ```
 
 ### `POST /api/auth/full-reauth`
 
-Starts a full re-authentication flow.
+Starts a full re-authentication flow:
 
 ```bash
-curl -s -X POST "$BASE_URL/api/auth/full-reauth" \
-  -H "x-api-key: $API_KEY"
+curl -s -X POST "$BASE_URL/api/auth/full-reauth" -H "x-api-key: $API_KEY"
 ```
 
 ### `POST /api/init`
 
-Initializes or reinitializes the Alexa runtime.
+Initializes or reinitializes the Alexa runtime:
 
 ```bash
-curl -s -X POST "$BASE_URL/api/init" \
-  -H "x-api-key: $API_KEY"
+curl -s -X POST "$BASE_URL/api/init" -H "x-api-key: $API_KEY"
 ```
 
 ### `POST /api/clear`
 
-Clears saved login/auth data.
+Clears saved login/auth data:
 
 ```bash
-curl -s -X POST "$BASE_URL/api/clear" \
-  -H "x-api-key: $API_KEY"
+curl -s -X POST "$BASE_URL/api/clear" -H "x-api-key: $API_KEY"
 ```
 
 ---
@@ -463,97 +438,109 @@ curl -s -X POST "$BASE_URL/api/clear" \
 
 ### `GET /api/devices`
 
-Returns Alexa devices.
+Returns discovered Alexa devices. Use this endpoint to find each Echo's serial number and device type:
 
 ```bash
-curl -s "$BASE_URL/api/devices" \
-  -H "x-api-key: $API_KEY"
+curl -s "$BASE_URL/api/devices"
 ```
 
 ### `GET /api/devices/:serialNumber`
 
-Returns one device by serial number.
+Returns one device by serial number:
 
 ```bash
-curl -s "$BASE_URL/api/devices/G6G236093082061K" \
-  -H "x-api-key: $API_KEY"
+curl -s "$BASE_URL/api/devices/YOUR_DEVICE_SERIAL"
 ```
+
+### `GET /api/devices/:serialNumber/status-lite`
+
+Returns lightweight status, including online/offline state and volume, for one Echo:
+
+```bash
+curl -s "$BASE_URL/api/devices/YOUR_DEVICE_SERIAL/status-lite"
+```
+
+Browser-friendly URL:
+
+```text
+http://YOUR_SERVER_IP:8585/api/devices/YOUR_DEVICE_SERIAL/status-lite
+```
+
+Example using a device serial number:
+
+```bash
+curl -s "$BASE_URL/api/devices/EXAMPLE_DEVICE_SERIAL/status-lite"
+```
+
+Use `status-lite` for regular polling. It checks the requested device's current status without forcing a full discovery on every call. Device discovery is refreshed when needed, at most once per 15 minutes for this path.
 
 ### `GET /api/devices/:serialNumber/status`
 
-Returns status for one device.
+Returns more detailed device status:
 
 ```bash
-curl -s "$BASE_URL/api/devices/G6G236093082061K/status" \
-  -H "x-api-key: $API_KEY"
+curl -s "$BASE_URL/api/devices/YOUR_DEVICE_SERIAL/status"
 ```
+
+Use `status` when you want the broader status information and a device-discovery refresh. Discovery is still subject to the server's 15-minute cache interval.
 
 ---
 
 ## Speak
 
+Speak sends text-to-speech to an individual Echo device. You can use the configured default Echo or select one by serial number.
+
 ### `GET /api/speak`
-
-Speaks text on the selected/default Echo device.
-
-Common query parameters:
-
-```text
-text
-serialNumber
-deviceType
-volume
-restoreVolume
-apiKey
-```
 
 Speak using the default device:
 
 ```bash
-curl -s "$BASE_URL/api/speak?text=Hello%20from%20Echo%20Whispers" \
-  -H "x-api-key: $API_KEY"
+curl -G "$BASE_URL/api/speak" \
+  --data-urlencode "text=Hello from Echo Whispers"
 ```
 
 Speak to a specific device:
 
 ```bash
-curl -s "$BASE_URL/api/speak?text=Hello&serialNumber=G6G236093082061K&deviceType=A11QM4H9HGV71H" \
-  -H "x-api-key: $API_KEY"
+curl -G "$BASE_URL/api/speak" \
+  --data-urlencode "text=Hello from Echo Whispers" \
+  --data-urlencode "serialNumber=YOUR_DEVICE_SERIAL" \
+  --data-urlencode "deviceType=YOUR_DEVICE_TYPE"
 ```
 
-Speak at volume 35 and then restore the original volume:
+Speak at volume 35 and restore the original volume afterward:
 
 ```bash
-curl -s "$BASE_URL/api/speak?text=Hello&serialNumber=G6G236093082061K&deviceType=A11QM4H9HGV71H&volume=35&restoreVolume=true" \
-  -H "x-api-key: $API_KEY"
+curl -G "$BASE_URL/api/speak" \
+  --data-urlencode "text=Hello from Echo Whispers" \
+  --data-urlencode "serialNumber=YOUR_DEVICE_SERIAL" \
+  --data-urlencode "deviceType=YOUR_DEVICE_TYPE" \
+  --data-urlencode "volume=35" \
+  --data-urlencode "restoreVolume=true"
 ```
 
-Browser-friendly GET example:
+Browser-friendly URL:
 
 ```text
-http://YOUR_SERVER_IP:8585/api/speak?text=Hello&serialNumber=G6G236093082061K&deviceType=A11QM4H9HGV71H&volume=35&restoreVolume=true&apiKey=YOUR_API_KEY
+http://YOUR_SERVER_IP:8585/api/speak?text=Hello%20from%20Echo%20Whispers&serialNumber=YOUR_DEVICE_SERIAL&deviceType=YOUR_DEVICE_TYPE
 ```
 
 ### `GET /api/speak/:serialNumber`
 
-Speaks text using the serial number in the path.
-
 ```bash
-curl -s "$BASE_URL/api/speak/G6G236093082061K?text=Hello&deviceType=A11QM4H9HGV71H&volume=35&restoreVolume=true" \
-  -H "x-api-key: $API_KEY"
+curl -G "$BASE_URL/api/speak/YOUR_DEVICE_SERIAL" \
+  --data-urlencode "text=Hello" \
+  --data-urlencode "deviceType=YOUR_DEVICE_TYPE"
 ```
 
 ### `POST /api/speak`
 
-POST version of speak.
-
 ```bash
 curl -s -X POST "$BASE_URL/api/speak" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: $API_KEY" \
   -d '{
-    "serialNumber": "G6G236093082061K",
-    "deviceType": "A11QM4H9HGV71H",
+    "serialNumber": "YOUR_DEVICE_SERIAL",
+    "deviceType": "YOUR_DEVICE_TYPE",
     "text": "Hello from Echo Whispers",
     "volume": 35,
     "restoreVolume": true
@@ -562,19 +549,26 @@ curl -s -X POST "$BASE_URL/api/speak" \
 
 ### `POST /api/speak/:serialNumber`
 
-POST speak using serial number in the path.
-
 ```bash
-curl -s -X POST "$BASE_URL/api/speak/G6G236093082061K" \
+curl -s -X POST "$BASE_URL/api/speak/YOUR_DEVICE_SERIAL" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: $API_KEY" \
   -d '{
-    "deviceType": "A11QM4H9HGV71H",
+    "deviceType": "YOUR_DEVICE_TYPE",
     "text": "Hello from Echo Whispers",
     "volume": 35,
     "restoreVolume": true
   }'
 ```
+
+Common Speak parameters:
+
+| Parameter | Description |
+|---|---|
+| `text` | Text to speak |
+| `serialNumber` | Target Echo serial number; omit to use the default device |
+| `deviceType` | Target Echo device type |
+| `volume` | Optional volume, 0–100 |
+| `restoreVolume` | Whether to restore the prior volume after speaking |
 
 ---
 
@@ -582,18 +576,21 @@ curl -s -X POST "$BASE_URL/api/speak/G6G236093082061K" \
 
 ### `GET /api/volume`
 
-Sets volume on a selected/default device.
+Sets volume on a selected/default device:
 
 ```bash
-curl -s "$BASE_URL/api/volume?serialNumber=G6G236093082061K&deviceType=A11QM4H9HGV71H&level=35" \
-  -H "x-api-key: $API_KEY"
+curl -G "$BASE_URL/api/volume" \
+  --data-urlencode "serialNumber=YOUR_DEVICE_SERIAL" \
+  --data-urlencode "deviceType=YOUR_DEVICE_TYPE" \
+  --data-urlencode "level=35"
 ```
 
 ### `GET /api/volume/:serialNumber`
 
 ```bash
-curl -s "$BASE_URL/api/volume/G6G236093082061K?deviceType=A11QM4H9HGV71H&level=35" \
-  -H "x-api-key: $API_KEY"
+curl -G "$BASE_URL/api/volume/YOUR_DEVICE_SERIAL" \
+  --data-urlencode "deviceType=YOUR_DEVICE_TYPE" \
+  --data-urlencode "level=35"
 ```
 
 ### `POST /api/volume`
@@ -601,10 +598,9 @@ curl -s "$BASE_URL/api/volume/G6G236093082061K?deviceType=A11QM4H9HGV71H&level=3
 ```bash
 curl -s -X POST "$BASE_URL/api/volume" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: $API_KEY" \
   -d '{
-    "serialNumber": "G6G236093082061K",
-    "deviceType": "A11QM4H9HGV71H",
+    "serialNumber": "YOUR_DEVICE_SERIAL",
+    "deviceType": "YOUR_DEVICE_TYPE",
     "level": 35
   }'
 ```
@@ -612,69 +608,108 @@ curl -s -X POST "$BASE_URL/api/volume" \
 ### `POST /api/volume/:serialNumber`
 
 ```bash
-curl -s -X POST "$BASE_URL/api/volume/G6G236093082061K" \
+curl -s -X POST "$BASE_URL/api/volume/YOUR_DEVICE_SERIAL" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: $API_KEY" \
   -d '{
-    "deviceType": "A11QM4H9HGV71H",
+    "deviceType": "YOUR_DEVICE_TYPE",
     "level": 35
   }'
 ```
 
-Volume value is clamped to:
-
-```text
-0-100
-```
+Volume values are clamped to `0–100`.
 
 ---
 
 ## Announcements
 
-### `GET /api/announce`
+Announce sends the same message to one, multiple, or all available Echo devices. Unlike sending Speak requests to each device separately, an announcement uses **one Amazon request** containing all selected devices. Devices reported offline are automatically excluded.
 
-Sends an announcement to selected devices.
-
-```bash
-curl -s "$BASE_URL/api/announce?devices=G6G236093082061K,GK61B505240503EQ&text=Hello%20everyone&title=Echo%20Whispers" \
-  -H "x-api-key: $API_KEY"
-```
+Announcements may play the standard Alexa announcement chime. Volume adjustment and restoration are supported by Speak, not by the announcement request.
 
 ### `GET /api/announce/all`
 
-Sends an announcement to all announcement-capable Echo devices.
+Announce to all available announcement-capable Echo devices:
 
 ```bash
-curl -s "$BASE_URL/api/announce/all?text=Hello%20everyone&title=Echo%20Whispers" \
-  -H "x-api-key: $API_KEY"
+curl -G "$BASE_URL/api/announce/all" \
+  --data-urlencode "text=Hello everyone"
+```
+
+Browser URL:
+
+```text
+http://YOUR_SERVER_IP:8585/api/announce/all?text=Hello%20everyone
+```
+
+### `GET /api/announce`
+
+Announce to one device:
+
+```bash
+curl -G "$BASE_URL/api/announce" \
+  --data-urlencode "text=Hello from Echo Whispers" \
+  --data-urlencode "devices=YOUR_DEVICE_SERIAL"
+```
+
+Announce to multiple devices using comma-separated serial numbers:
+
+```bash
+curl -G "$BASE_URL/api/announce" \
+  --data-urlencode "text=Dinner is ready" \
+  --data-urlencode "devices=SERIAL1,SERIAL2,SERIAL3"
+```
+
+Browser URL:
+
+```text
+http://YOUR_SERVER_IP:8585/api/announce?devices=SERIAL1,SERIAL2&text=Dinner%20is%20ready
 ```
 
 ### `POST /api/announce`
 
+Announce to selected devices using JSON:
+
 ```bash
 curl -s -X POST "$BASE_URL/api/announce" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: $API_KEY" \
   -d '{
     "devices": [
-      { "serialNumber": "G6G236093082061K" },
-      { "serialNumber": "GK61B505240503EQ" }
+      {"serialNumber": "SERIAL1"},
+      {"serialNumber": "SERIAL2"}
     ],
-    "text": "Hello everyone",
+    "text": "Dinner is ready",
     "title": "Echo Whispers"
   }'
 ```
 
 ### `POST /api/announce/all`
 
+Announce to all available devices:
+
 ```bash
 curl -s -X POST "$BASE_URL/api/announce/all" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: $API_KEY" \
   -d '{
     "text": "Hello everyone",
     "title": "Echo Whispers"
   }'
+```
+
+Common announcement parameters:
+
+| Parameter | Description |
+|---|---|
+| `text` | Announcement message |
+| `devices` | Comma-separated device serial numbers for GET; array of device objects for POST |
+| `title` | Optional announcement title |
+| `all=true` | Select all available announcement-capable devices |
+
+If an API key is enabled, include it in the header:
+
+```bash
+curl -G "$BASE_URL/api/announce/all" \
+  -H "x-api-key: $API_KEY" \
+  --data-urlencode "text=Hello everyone"
 ```
 
 ---
@@ -725,16 +760,15 @@ curl -s -X POST "$BASE_URL/clearAuth"
 
 ### `GET /api/hubitat/status`
 
-Returns Hubitat integration status.
+Returns Hubitat integration status:
 
 ```bash
-curl -s "$BASE_URL/api/hubitat/status" \
-  -H "x-api-key: $API_KEY"
+curl -s "$BASE_URL/api/hubitat/status" -H "x-api-key: $API_KEY"
 ```
 
 ### `POST /api/hubitat/config`
 
-Configures Hubitat compatibility.
+Configures Hubitat compatibility:
 
 ```bash
 curl -s -X POST "$BASE_URL/api/hubitat/config" \
@@ -750,38 +784,34 @@ curl -s -X POST "$BASE_URL/api/hubitat/config" \
 
 ### `POST /api/hubitat/send-server-data`
 
-Sends server info to Hubitat.
+Sends server info to Hubitat:
 
 ```bash
-curl -s -X POST "$BASE_URL/api/hubitat/send-server-data" \
-  -H "x-api-key: $API_KEY"
+curl -s -X POST "$BASE_URL/api/hubitat/send-server-data" -H "x-api-key: $API_KEY"
 ```
 
 ### `POST /api/hubitat/send-cookie`
 
-Sends the current Amazon cookie to Hubitat.
+Sends the current Amazon cookie to Hubitat:
 
 ```bash
-curl -s -X POST "$BASE_URL/api/hubitat/send-cookie" \
-  -H "x-api-key: $API_KEY"
+curl -s -X POST "$BASE_URL/api/hubitat/send-cookie" -H "x-api-key: $API_KEY"
 ```
 
 ### `POST /api/hubitat/pull-cookie`
 
-Pulls cookie data from Hubitat if supported/configured.
+Pulls cookie data from Hubitat if supported/configured:
 
 ```bash
-curl -s -X POST "$BASE_URL/api/hubitat/pull-cookie" \
-  -H "x-api-key: $API_KEY"
+curl -s -X POST "$BASE_URL/api/hubitat/pull-cookie" -H "x-api-key: $API_KEY"
 ```
 
 ### `DELETE /api/hubitat/cookie`
 
-Clears the Hubitat-side cookie through the configured callback flow.
+Clears the Hubitat-side cookie through the configured callback flow:
 
 ```bash
-curl -s -X DELETE "$BASE_URL/api/hubitat/cookie" \
-  -H "x-api-key: $API_KEY"
+curl -s -X DELETE "$BASE_URL/api/hubitat/cookie" -H "x-api-key: $API_KEY"
 ```
 
 ---
@@ -858,7 +888,7 @@ The UI sends the key as:
 x-api-key
 ```
 
-The clickable GET examples can also include:
+Clickable GET examples can also include:
 
 ```text
 ?apiKey=YOUR_API_KEY
@@ -872,21 +902,23 @@ The UI will authorize that save using the prior key.
 
 ### Devices do not load
 
-Try:
+Check status:
 
 ```bash
-curl -s "$BASE_URL/api/status" \
-  -H "x-api-key: $API_KEY"
+curl -s "$BASE_URL/api/status" -H "x-api-key: $API_KEY"
 ```
 
-Then refresh the cookie:
+Refresh the cookie:
 
 ```bash
-curl -s -X POST "$BASE_URL/api/auth/refresh-cookie" \
-  -H "x-api-key: $API_KEY"
+curl -s -X POST "$BASE_URL/api/auth/refresh-cookie" -H "x-api-key: $API_KEY"
 ```
 
 If needed, perform Amazon Login again from the UI.
+
+### HTTP 429: Too Many Requests
+
+Amazon may rate-limit repeated Alexa commands. Avoid sending many Speak requests in rapid succession. For the same message to multiple devices, use Announce to send one request instead.
 
 ### View PM2 logs
 
@@ -905,18 +937,19 @@ npm install
 node server.js
 ```
 
-Check syntax:
+Check syntax and dependencies:
 
 ```bash
 node --check server.js
+npm audit
 ```
 
 Common Git update flow:
 
 ```bash
 git status
-git add .
-git commit -m "Update Echo Whispers"
+git add README.md
+git commit -m "Update README"
 git push
 ```
 
