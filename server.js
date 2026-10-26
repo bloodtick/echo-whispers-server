@@ -33,7 +33,7 @@ const STATIC_IMAGES_DIR = path.join(__dirname, 'images');
 app.use('/images', express.static(STATIC_IMAGES_DIR));
 const PORT = Number(process.env.PORT || 8585);
 const DEFAULT_PROXY_PORT = PORT + 1;
-const APP_VERSION = '1.0.3';
+const APP_VERSION = '1.0.4';
 const APP_AUTHOR = 'Bloodtick Jones';
 const APP_COPYRIGHT = `© 2026 ${APP_AUTHOR}`;
 const COLOR_DARK_BLUE = '#1A77C9';
@@ -4984,9 +4984,7 @@ function isAnnouncementCapableDevice(device) {
 
   if (!serial || !type) return false;
   if (device.online === false) return false;
-  if (family === 'WHA') return false;
-
-  return ['ECHO', 'KNIGHT', 'ROOK', 'SOUNDBAR'].includes(family);
+  return ['ECHO', 'KNIGHT', 'ROOK', 'SOUNDBAR', 'WHA'].includes(family);
 }
 
 function findAnnouncementDevice(item) {
@@ -5113,7 +5111,7 @@ function normalizeAnnouncementLocale(value) {
 function buildAnnouncementDevices(devices) {
   return uniqueAnnouncementDevices(devices).map(d => ({
     deviceSerialNumber: d.serialNumber || d.deviceSerialNumber || d.serial,
-    deviceType: d.deviceType || d.deviceTypeId || d.type
+    deviceTypeId: d.deviceType || d.deviceTypeId || d.type
   }));
 }
 
@@ -5140,31 +5138,43 @@ function buildAnnouncementPayload(text, title, devices, preferenceData) {
     throw new Error('No announcement-capable target devices');
   }
 
+  const source = announcementDevices[0];
+
   const sequenceJson = JSON.stringify({
     '@type': 'com.amazon.alexa.behaviors.model.Sequence',
     startNode: {
-      '@type': 'com.amazon.alexa.behaviors.model.OpaquePayloadOperationNode',
-      type: 'AlexaAnnouncement',
-      operationPayload: {
-        expireAfter: 'PT5S',
-        content: [
-          {
+      '@type': 'com.amazon.alexa.behaviors.model.SerialNode',
+      nodesToExecute: [
+        {
+          '@type': 'com.amazon.alexa.behaviors.model.OpaquePayloadOperationNode',
+          type: 'AlexaAnnouncement',
+          operationPayload: {
+            deviceType: source.deviceTypeId,
+            deviceSerialNumber: source.deviceSerialNumber,
             locale,
-            display: {
-              title: title || config.deviceAppName || 'Echo Whispers',
-              body: String(text || '')
+            customerId,
+            expireAfter: 'PT5S',
+            content: [
+              {
+                locale,
+                display: {
+                  title: title || config.deviceAppName || 'Echo Whispers',
+                  body: String(text || '')
+                },
+                speak: {
+                  type: 'text',
+                  value: String(text || '')
+                }
+              }
+            ],
+            target: {
+              customerId,
+              devices: announcementDevices
             },
-            speak: {
-              type: 'text',
-              value: String(text || '')
-            }
+            skillId: 'amzn1.ask.1p.routines.messaging'
           }
-        ],
-        target: {
-          customerId,
-          devices: announcementDevices
         }
-      }
+      ]
     }
   });
 
